@@ -2,7 +2,12 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import json
+import csv
+from datetime import datetime
+import os
 import requests
+
+
 
 # -----------------------------------
 # KONFIGURASI DASAR
@@ -12,7 +17,43 @@ st.set_page_config(
     layout="wide",
 )
 
-st.title("Dashboard Pemantauan Kasus DBD - Provinsi Jawa Barat")
+st.title("Dashboard Pemantauan Kasus DBD - Provinsi Jawa Barat") 
+
+if "client_ip" not in st.session_state:
+    st.session_state["client_ip"] = "LOCALHOST"
+
+
+# -----------------------------------
+# AUDIT LOG (SECURITY & DATA GOVERNANCE)
+# -----------------------------------
+AUDIT_LOG_FILE = "audit_log.csv"
+
+def write_audit_log(activity):
+    file_exists = os.path.isfile(AUDIT_LOG_FILE)
+    ip_address = get_client_ip()
+
+    with open(AUDIT_LOG_FILE, mode="a", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
+
+        if not file_exists:
+            writer.writerow(["timestamp", "activity", "ip_address"])
+
+        writer.writerow([
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            activity,
+            ip_address
+        ])
+        
+def get_client_ip():
+    try:
+        # Streamlit tidak selalu expose IP, jadi fallback aman
+        return st.session_state.get("client_ip", "Unknown")
+    except:
+        return "Unknown"
+
+
+write_audit_log("Public user accessed dashboard")
+write_audit_log("Public user submitted community report")
 
 # -----------------------------------
 # LOAD DATA
@@ -50,6 +91,50 @@ col1, col2, col3 = st.columns(3)
 col1.metric("Total Kasus DBD Jawa Barat", f"{total_cases:,}")
 col2.metric("Rata-rata Kasus per Kabupaten/Kota", f"{avg_case:,}")
 col3.metric("Kasus Tertinggi", f"{max_row['kabupaten_kota']} ({max_row['jumlah_kasus']:,})")
+
+st.markdown("### 🚨 Indikator Risiko DBD")
+
+mean_case = filtered["jumlah_kasus"].mean()
+std_case = filtered["jumlah_kasus"].std()
+
+def classify_risk(value):
+    if value >= mean_case + std_case:
+        return "🔴 Risiko Tinggi"
+    elif value >= mean_case:
+        return "🟡 Risiko Sedang"
+    else:
+        return "🟢 Risiko Rendah"
+
+risk_df = filtered.copy()
+risk_df["status_risiko"] = risk_df["jumlah_kasus"].apply(classify_risk)
+
+st.dataframe(
+    risk_df[["kabupaten_kota", "jumlah_kasus", "status_risiko"]]
+    .sort_values("jumlah_kasus", ascending=False),
+    use_container_width=True
+)
+
+st.markdown("### 🧠 Insight Kasus DBD")
+
+highest = risk_df.loc[risk_df["jumlah_kasus"].idxmax()]
+lowest = risk_df.loc[risk_df["jumlah_kasus"].idxmin()]
+
+st.info(
+    f"Pada tahun {selected_year}, kasus DBD tertinggi terjadi di "
+    f"{highest['kabupaten_kota']} dengan total {int(highest['jumlah_kasus']):,} kasus. "
+    f"Sementara itu, kasus terendah tercatat di {lowest['kabupaten_kota']}."
+)
+
+st.sidebar.markdown("### 📥 Unduh Data")
+
+csv_download = filtered.to_csv(index=False).encode("utf-8")
+
+st.sidebar.download_button(
+    label="Download Data DBD (CSV)",
+    data=csv_download,
+    file_name=f"dbd_jabar_{selected_year}.csv",
+    mime="text/csv"
+)
 
 # -----------------------------------
 # TAB VISUALISASI
@@ -237,15 +322,19 @@ with tab5:
         if submitted:
             if not nama or not lokasi or not deskripsi:
                 st.warning("Harap lengkapi semua kolom sebelum mengirim laporan.")
+                write_audit_log("Failed report submission (incomplete form)")
             else:
                 st.success("Laporan Anda berhasil dikirim. Terima kasih atas partisipasinya.")
+                write_audit_log("Public user submitted community report")
+
                 st.write("Ringkasan laporan:")
                 st.write(f"- Nama: {nama}")
                 st.write(f"- Lokasi: {lokasi}")
                 st.write(f"- Deskripsi: {deskripsi}")
 
+
 # -----------------------------------
 # FOOTER
 # -----------------------------------
 st.markdown("---")
-st.caption("Data: Dinas Kesehatan Jawa Barat & Open-Meteo | Dashboard oleh R. Dika Natakusumah")
+st.caption("Data: Dinas Kesehatan Jawa Barat & Open-Meteo | Dashboard oleh GROUP CARE ABOUT HEALTH_INFORMATICS_ITENAS")
