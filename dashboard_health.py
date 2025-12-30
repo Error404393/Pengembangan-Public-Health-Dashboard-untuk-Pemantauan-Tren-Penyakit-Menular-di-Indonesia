@@ -92,6 +92,69 @@ col1.metric("Total Kasus DBD Jawa Barat", f"{total_cases:,}")
 col2.metric("Rata-rata Kasus per Kabupaten/Kota", f"{avg_case:,}")
 col3.metric("Kasus Tertinggi", f"{max_row['kabupaten_kota']} ({max_row['jumlah_kasus']:,})")
 
+# -----------------------------------
+# 🚨 EARLY WARNING & TREND INDICATOR
+# -----------------------------------
+st.markdown("### 🚨 Early Warning & Trend Indicator")
+
+# Total kasus per tahun (level provinsi Jawa Barat)
+total_per_year = (
+    df.groupby("tahun")["jumlah_kasus"]
+    .sum()
+    .sort_index()
+)
+
+current_year = selected_year
+prev_year = current_year - 1
+
+current_value = total_per_year.get(current_year)
+prev_value = total_per_year.get(prev_year)
+
+colEW1, colEW2 = st.columns(2)
+
+# ---------------------------
+# TREND DIRECTION INDICATOR
+# ---------------------------
+with colEW1:
+    if prev_value is not None and prev_value != 0:
+        diff = current_value - prev_value
+        pct = (diff / prev_value) * 100
+
+        if diff > 0:
+            st.error(
+                f"🔺 Tren Kasus Meningkat {pct:.1f}% dibanding tahun {prev_year}"
+            )
+        elif diff < 0:
+            st.success(
+                f"🔻 Tren Kasus Menurun {abs(pct):.1f}% dibanding tahun {prev_year}"
+            )
+        else:
+            st.info(
+                f"➖ Tren Kasus Stabil dibanding tahun {prev_year}"
+            )
+    else:
+        st.info("Data tahun sebelumnya tidak tersedia untuk analisis tren.")
+
+# ---------------------------
+# EARLY WARNING STATUS
+# ---------------------------
+with colEW2:
+    avg_historical = total_per_year.mean()
+
+    if current_value >= avg_historical * 1.25:
+        st.error(
+            "🚨 STATUS SIAGA: Kasus DBD jauh di atas rata-rata tahunan"
+        )
+    elif current_value >= avg_historical:
+        st.warning(
+            "⚠️ STATUS WASPADA: Kasus DBD di atas rata-rata tahunan"
+        )
+    else:
+        st.success(
+            "✅ STATUS NORMAL: Kasus DBD masih dalam batas aman"
+        )
+
+
 st.markdown("### 🚨 Indikator Risiko DBD")
 
 mean_case = filtered["jumlah_kasus"].mean()
